@@ -65,24 +65,24 @@ public:
         icon_image->set_size_request(32, 32);
         pack_start(*icon_image, false, false);
 
-        // Create vertical box for title and URL
+        // Create vertical box for title and URL (each on their own line)
         Gtk::Box* text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
 
-        // Create title label
+        // Create title label (single line, no wrapping)
         title_label = Gtk::manage(new Gtk::Label(title));
         title_label->set_halign(Gtk::ALIGN_START);
         title_label->set_valign(Gtk::ALIGN_START);
         title_label->set_ellipsize(Pango::ELLIPSIZE_END);
+        title_label->set_single_line_mode(true);
         text_box->pack_start(*title_label, false, false);
 
-        // Create URL label (blue and underlined, but not clickable)
+        // Create URL label (single line, no wrapping, blue and underlined)
         url_label = Gtk::manage(new Gtk::Label());
         url_label->set_halign(Gtk::ALIGN_START);
         url_label->set_valign(Gtk::ALIGN_START);
-        url_label->set_line_wrap(true);
-        url_label->set_line_wrap_mode(Pango::WRAP_WORD);
+        url_label->set_ellipsize(Pango::ELLIPSIZE_END);
+        url_label->set_single_line_mode(true);
         url_label->set_selectable(false);
-        url_label->set_max_width_chars(80); // Allow wrapping at reasonable width
 
         // Make it look like a link (blue and underlined via markup)
         Glib::ustring url_markup = "<span underline=\"single\" color=\"#0000FF\">" +
