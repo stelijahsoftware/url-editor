@@ -68,20 +68,20 @@ public:
         // Create vertical box for title and URL (each on their own line)
         Gtk::Box* text_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 2));
 
-        // Create title label (single line, no wrapping)
+        // Create title label (single line, no wrapping, no ellipsize for horizontal scroll)
         title_label = Gtk::manage(new Gtk::Label(title));
         title_label->set_halign(Gtk::ALIGN_START);
         title_label->set_valign(Gtk::ALIGN_START);
-        title_label->set_ellipsize(Pango::ELLIPSIZE_END);
         title_label->set_single_line_mode(true);
+        title_label->set_ellipsize(Pango::ELLIPSIZE_NONE);
         text_box->pack_start(*title_label, false, false);
 
-        // Create URL label (single line, no wrapping, blue and underlined)
+        // Create URL label (single line, no wrapping, blue and underlined, no ellipsize for horizontal scroll)
         url_label = Gtk::manage(new Gtk::Label());
         url_label->set_halign(Gtk::ALIGN_START);
         url_label->set_valign(Gtk::ALIGN_START);
-        url_label->set_ellipsize(Pango::ELLIPSIZE_END);
         url_label->set_single_line_mode(true);
+        url_label->set_ellipsize(Pango::ELLIPSIZE_NONE);
         url_label->set_selectable(false);
 
         // Make it look like a link (blue and underlined via markup)
@@ -150,14 +150,17 @@ public:
 
         main_box->pack_start(*header_box, false, false);
 
-        // Create scrolled window for list
+        // Create scrolled window for list (with horizontal scrolling)
         scrolled_window = Gtk::manage(new Gtk::ScrolledWindow());
         scrolled_window->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
         scrolled_window->set_vexpand(true);
+        scrolled_window->set_hexpand(true);
+        scrolled_window->set_min_content_width(600); // Minimum width before horizontal scroll appears
 
         // Create list box
         list_box = Gtk::manage(new Gtk::ListBox());
         list_box->set_selection_mode(Gtk::SELECTION_SINGLE);
+        list_box->set_hexpand(false); // Allow list to expand beyond window width for horizontal scroll
         scrolled_window->add(*list_box);
         main_box->pack_start(*scrolled_window, true, true);
 
