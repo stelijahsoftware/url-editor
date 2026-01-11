@@ -611,6 +611,40 @@ private:
         download_favicons();
     }
 
+    std::string convert_file_uri_to_path(const Glib::ustring& uri_or_path) {
+        std::string path = uri_or_path.raw();
+
+        // Check if it starts with file://
+        if (path.find("file://") == 0) {
+            // Remove file:// prefix
+            path = path.substr(7);
+
+            // Handle localhost (file://localhost/path -> /path)
+            if (path.find("localhost/") == 0) {
+                path = path.substr(9);
+            }
+
+            // Ensure absolute path starts with /
+            if (path.empty() || path[0] != '/') {
+                path = "/" + path;
+            }
+
+            // Decode URL encoding if present (e.g., %20 -> space)
+            // Simple approach: use Glib to decode
+            try {
+                gchar* decoded = g_uri_unescape_string(path.c_str(), nullptr);
+                if (decoded) {
+                    path = decoded;
+                    g_free(decoded);
+                }
+            } catch (...) {
+                // If decoding fails, use original path
+            }
+        }
+
+        return path;
+    }
+
     void load_urls() {
         Glib::ustring file_path = file_path_entry->get_text();
         if (file_path.empty()) {
@@ -618,8 +652,9 @@ private:
             return;
         }
 
-        std::string path_str = file_path.raw();
-        std::ifstream file(path_str);
+        std::string path_str = convert_file_uri_to_path(file_path);
+        // Open file in binary mode to read UTF-8 correctly
+        std::ifstream file(path_str, std::ios::binary);
         if (!file.is_open()) {
             status_label->set_text(Glib::ustring::compose("Error: Could not open %1", file_path));
             return;
@@ -646,12 +681,21 @@ private:
                 continue;
             }
 
-            // Try to convert to UTF-8, fallback to direct assignment if conversion fails
+            // Treat the line as UTF-8 (which is the standard for modern text files)
+            // Glib::ustring can handle UTF-8 strings directly
             Glib::ustring ustring_line;
             try {
-                ustring_line = Glib::convert(line, "UTF-8", "ISO-8859-1");
+                // Try to create ustring from UTF-8 bytes
+                // If the string is already valid UTF-8, this will work
+                ustring_line = Glib::ustring(line);
             } catch (...) {
-                ustring_line = line;
+                // If that fails, try to convert from locale encoding
+                try {
+                    ustring_line = Glib::locale_to_utf8(line);
+                } catch (...) {
+                    // Last resort: use as-is (might have encoding issues)
+                    ustring_line = line;
+                }
             }
 
             if (!expecting_url) {
@@ -683,8 +727,9 @@ private:
             return;
         }
 
-        std::string path_str = file_path.raw();
-        std::ofstream file(path_str);
+        std::string path_str = convert_file_uri_to_path(file_path);
+        // Open file in binary mode to preserve UTF-8 encoding
+        std::ofstream file(path_str, std::ios::binary);
         if (!file.is_open()) {
             status_label->set_text(Glib::ustring::compose("Error: Could not save %1", file_path));
             return;
@@ -704,8 +749,11 @@ private:
         }
 
         for (size_t i = 0; i < ordered_entries.size(); ++i) {
-            file << ordered_entries[i].title.raw() << "\n";
-            file << ordered_entries[i].url.raw() << "\n";
+            // Write UTF-8 strings directly (raw() returns UTF-8 bytes)
+            std::string title_utf8 = ordered_entries[i].title.raw();
+            std::string url_utf8 = ordered_entries[i].url.raw();
+            file << title_utf8 << "\n";
+            file << url_utf8 << "\n";
             if (i < ordered_entries.size() - 1) {
                 file << "\n";
             }
