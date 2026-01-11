@@ -778,6 +778,7 @@ private:
         std::vector<Gtk::Widget*> children = list_box->get_children();
         pending_downloads = children.size();
         completed_downloads = 0;
+        current_download_index = 0;
 
         if (pending_downloads == 0) {
             return;
@@ -787,16 +788,34 @@ private:
         progress_bar->set_fraction(0.0);
         status_label->set_text("Downloading favicons...");
 
-        int index = 0;
-        for (Gtk::Widget* child : children) {
-            Gtk::ListBoxRow* row = dynamic_cast<Gtk::ListBoxRow*>(child);
-            if (row) {
-                UrlRow* url_row = dynamic_cast<UrlRow*>(row->get_child());
-                if (url_row) {
-                    download_favicon_for_url(url_row->get_url(), index, 0);
-                }
+        // Start downloading the first favicon (sequential)
+        download_next_favicon();
+    }
+
+    void download_next_favicon() {
+        std::vector<Gtk::Widget*> children = list_box->get_children();
+
+        if (current_download_index >= (int)children.size()) {
+            // All downloads completed
+            progress_bar->set_visible(false);
+            status_label->set_text(Glib::ustring::compose("Loaded %1 URLs", children.size()));
+            return;
+        }
+
+        Gtk::ListBoxRow* row = dynamic_cast<Gtk::ListBoxRow*>(children[current_download_index]);
+        if (row) {
+            UrlRow* url_row = dynamic_cast<UrlRow*>(row->get_child());
+            if (url_row) {
+                download_favicon_for_url(url_row->get_url(), current_download_index, 0);
+            } else {
+                // Skip this row and move to next
+                current_download_index++;
+                download_next_favicon();
             }
-            index++;
+        } else {
+            // Skip this widget and move to next
+            current_download_index++;
+            download_next_favicon();
         }
     }
 
@@ -918,11 +937,9 @@ private:
         double fraction = (double)completed_downloads / pending_downloads;
         progress_bar->set_fraction(fraction);
 
-        if (completed_downloads >= pending_downloads) {
-            progress_bar->set_visible(false);
-            std::vector<Gtk::Widget*> children = list_box->get_children();
-            status_label->set_text(Glib::ustring::compose("Loaded %1 URLs", children.size()));
-        }
+        // Move to next favicon (sequential download)
+        current_download_index++;
+        download_next_favicon();
     }
 
     static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -979,6 +996,7 @@ private:
     std::vector<UrlEntry> url_entries;
     int pending_downloads = 0;
     std::atomic<int> completed_downloads{0};
+    int current_download_index = 0;
     Gtk::ListBoxRow* current_selected_row = nullptr;
 };
 
