@@ -576,7 +576,7 @@ private:
         }
 
         // Handle Delete key to delete entry
-        if (event->keyval == GDK_KEY_Delete || event->keyval == GDK_KEY_BackSpace) {
+        if (event->keyval == GDK_KEY_Delete) {
             on_delete_clicked();
             return true;
         }
