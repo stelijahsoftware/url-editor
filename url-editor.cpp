@@ -33,10 +33,8 @@
 #include <vector>
 #include <memory>
 #include <thread>
-#include <mutex>
 #include <atomic>
 #include <regex>
-#include <algorithm>
 
 struct UrlEntry {
     Glib::ustring title;
