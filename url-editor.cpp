@@ -154,6 +154,8 @@ public:
         url_text_scrolled->set_vexpand(false);
 
         url_text_view = Gtk::manage(new Gtk::TextView());
+        url_text_view->set_editable(true);
+        url_text_view->set_cursor_visible(true);
         url_text_view->set_wrap_mode(Gtk::WRAP_NONE);
         url_text_view->set_monospace(true);
         url_text_scrolled->add(*url_text_view);
@@ -569,6 +571,11 @@ private:
     }
 
     bool on_key_press(GdkEventKey* event) {
+        // Check if the text view has focus - if so, allow normal text editing
+        if (url_text_view->has_focus()) {
+            return false; // Let the text view handle the key press
+        }
+
         // Handle Ctrl+C to copy URL
         if ((event->state & GDK_CONTROL_MASK) && event->keyval == GDK_KEY_c) {
             on_copy_url_clicked();
