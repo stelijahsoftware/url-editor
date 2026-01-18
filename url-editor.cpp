@@ -142,8 +142,6 @@ public:
         header_box->pack_start(*url_count_label, false, false);
         header_box->pack_end(*Gtk::manage(new Gtk::Label()), true, true);
 
-        main_box->pack_start(*header_box, false, false);
-
         // Create mode selection
         Gtk::Box* mode_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
         Gtk::Label* mode_label = Gtk::manage(new Gtk::Label("Input format:"));
@@ -159,10 +157,7 @@ public:
         mode_box->pack_start(*mode2_radio, false, false);
         main_box->pack_start(*mode_box, false, false);
 
-        // Create text view for URLs input/output
-        Gtk::Label* text_label = Gtk::manage(new Gtk::Label("URLs (paste here):"));
-        text_label->set_halign(Gtk::ALIGN_START);
-        main_box->pack_start(*text_label, false, false);
+        main_box->pack_start(*header_box, false, false);
 
         // Create scrolled window for text view
         url_text_scrolled = Gtk::manage(new Gtk::ScrolledWindow());
