@@ -107,6 +107,11 @@ public:
         number_label->set_text(Glib::ustring::compose("%1.", number));
     }
 
+    void set_title(const Glib::ustring& new_title) {
+        title_text = new_title;
+        title_label->set_text(new_title);
+    }
+
     Glib::ustring get_url() const { return url_text; }
     Glib::ustring get_title() const { return title_text; }
 
@@ -860,7 +865,9 @@ private:
         if (row) {
             UrlRow* url_row = dynamic_cast<UrlRow*>(row->get_child());
             if (url_row) {
-                download_favicon_for_url(url_row->get_url(), current_download_index, 0);
+                // Check if title needs to be fetched (title equals URL means no title was provided)
+                bool needs_title = (url_row->get_title() == url_row->get_url());
+                download_favicon_for_url(url_row->get_url(), current_download_index, 0, needs_title);
             } else {
                 // Skip this row and move to next
                 current_download_index++;
@@ -873,8 +880,8 @@ private:
         }
     }
 
-    void download_favicon_for_url(const Glib::ustring& url_string, int item_index, int attempt) {
-        std::thread([this, url_string, item_index, attempt]() {
+    void download_favicon_for_url(const Glib::ustring& url_string, int item_index, int attempt, bool fetch_title = false) {
+        std::thread([this, url_string, item_index, attempt, fetch_title]() {
             std::string url = url_string.raw();
             std::string base_url = extract_base_url(url);
             std::string favicon_url;
@@ -959,7 +966,7 @@ private:
             }
 
             if (!success && attempt < 2) {
-                download_favicon_for_url(url_string, item_index, attempt + 1);
+                download_favicon_for_url(url_string, item_index, attempt + 1, fetch_title);
             } else if (!success) {
                 // Create fallback icon
                 Glib::RefPtr<Gdk::Pixbuf> fallback = Gdk::Pixbuf::create(Gdk::COLORSPACE_RGB, true, 8, 32, 32);
@@ -969,8 +976,95 @@ private:
                 });
             }
 
-            Glib::signal_idle().connect_once([this]() { update_progress(); });
+            // If we need to fetch the title, do it now (after favicon is done)
+            if (fetch_title) {
+                fetch_page_title(url_string, item_index);
+            } else {
+                Glib::signal_idle().connect_once([this]() { update_progress(); });
+            }
         }).detach();
+    }
+
+    void fetch_page_title(const Glib::ustring& url_string, int item_index) {
+        std::thread([this, url_string, item_index]() {
+            std::string url = url_string.raw();
+
+            // Ensure URL has a scheme
+            if (url.find("://") == std::string::npos) {
+                url = "http://" + url;
+            }
+
+            CURL* curl = curl_easy_init();
+            if (!curl) {
+                Glib::signal_idle().connect_once([this]() { update_progress(); });
+                return;
+            }
+
+            std::string html_data;
+
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &html_data);
+            curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36");
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+
+            CURLcode res = curl_easy_perform(curl);
+            long response_code = 0;
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+            curl_easy_cleanup(curl);
+
+            std::string title;
+            if (res == CURLE_OK && response_code == 200 && !html_data.empty()) {
+                // Extract title from HTML
+                size_t title_start = html_data.find("<title>");
+                if (title_start != std::string::npos) {
+                    title_start += 7; // Skip "<title>"
+                    size_t title_end = html_data.find("</title>", title_start);
+                    if (title_end != std::string::npos) {
+                        title = html_data.substr(title_start, title_end - title_start);
+                        // Trim whitespace
+                        title.erase(0, title.find_first_not_of(" \t\n\r"));
+                        title.erase(title.find_last_not_of(" \t\n\r") + 1);
+                    }
+                }
+            }
+
+            // Update title in UI (even if empty, to trigger progress update)
+            Glib::ustring title_ustring;
+            if (!title.empty()) {
+                try {
+                    title_ustring = Glib::ustring(title);
+                } catch (...) {
+                    try {
+                        title_ustring = Glib::locale_to_utf8(title);
+                    } catch (...) {
+                        title_ustring = title;
+                    }
+                }
+            } else {
+                // If we couldn't get the title, keep the URL as title
+                title_ustring = url_string;
+            }
+
+            Glib::signal_idle().connect_once([this, title_ustring, item_index]() {
+                set_url_title(item_index, title_ustring);
+                update_progress();
+            });
+        }).detach();
+    }
+
+    void set_url_title(int item_index, const Glib::ustring& title) {
+        std::vector<Gtk::Widget*> children = list_box->get_children();
+        if (item_index >= 0 && item_index < (int)children.size()) {
+            Gtk::ListBoxRow* row = dynamic_cast<Gtk::ListBoxRow*>(children[item_index]);
+            if (row) {
+                UrlRow* url_row = dynamic_cast<UrlRow*>(row->get_child());
+                if (url_row) {
+                    url_row->set_title(title);
+                }
+            }
+        }
     }
 
     void set_favicon(int item_index, Glib::RefPtr<Gdk::Pixbuf> pixbuf) {
