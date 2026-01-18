@@ -5,6 +5,7 @@
 #include <gtkmm/button.h>
 #include <gtkmm/label.h>
 #include <gtkmm/entry.h>
+#include <gtkmm/textview.h>
 #include <gtkmm/statusbar.h>
 #include <gtkmm/progressbar.h>
 #include <gtkmm/image.h>
@@ -129,26 +130,32 @@ public:
         main_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_VERTICAL, 10));
         add(*main_box);
 
-        // Create header box with file path entry and URL count
+        // Create header box with URL count
         header_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
-
-        // File path entry
-        Gtk::Label* path_label = Gtk::manage(new Gtk::Label("File path:"));
-        path_label->set_halign(Gtk::ALIGN_START);
-        header_box->pack_start(*path_label, false, false);
-
-        file_path_entry = Gtk::manage(new Gtk::Entry());
-        file_path_entry->set_text("urls.txt");
-        file_path_entry->set_hexpand(true);
-        file_path_entry->set_tooltip_text("Enter the path to the URLs file");
-        header_box->pack_start(*file_path_entry, true, true);
 
         url_count_label = Gtk::manage(new Gtk::Label("URLs: 0"));
         url_count_label->set_halign(Gtk::ALIGN_START);
-        url_count_label->set_margin_start(10);
         header_box->pack_start(*url_count_label, false, false);
+        header_box->pack_end(*Gtk::manage(new Gtk::Label()), true, true);
 
         main_box->pack_start(*header_box, false, false);
+
+        // Create text view for URLs input/output
+        Gtk::Label* text_label = Gtk::manage(new Gtk::Label("URLs (paste here, one title-URL pair per two lines):"));
+        text_label->set_halign(Gtk::ALIGN_START);
+        main_box->pack_start(*text_label, false, false);
+
+        // Create scrolled window for text view
+        url_text_scrolled = Gtk::manage(new Gtk::ScrolledWindow());
+        url_text_scrolled->set_policy(Gtk::POLICY_AUTOMATIC, Gtk::POLICY_AUTOMATIC);
+        url_text_scrolled->set_min_content_height(150);
+        url_text_scrolled->set_vexpand(false);
+
+        url_text_view = Gtk::manage(new Gtk::TextView());
+        url_text_view->set_wrap_mode(Gtk::WRAP_NONE);
+        url_text_view->set_monospace(true);
+        url_text_scrolled->add(*url_text_view);
+        main_box->pack_start(*url_text_scrolled, false, false);
 
         // Create scrolled window for list (with horizontal scrolling)
         scrolled_window = Gtk::manage(new Gtk::ScrolledWindow());
@@ -175,8 +182,8 @@ public:
         // Create button box
         button_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
 
-        load_button = Gtk::manage(new Gtk::Button("Load"));
-        save_button = Gtk::manage(new Gtk::Button("Save to path"));
+        load_button = Gtk::manage(new Gtk::Button("Load from text"));
+        save_button = Gtk::manage(new Gtk::Button("Export to text"));
         refresh_button = Gtk::manage(new Gtk::Button("Refresh Icons"));
 
         // Movement and delete buttons
@@ -231,8 +238,7 @@ public:
         // Initialize curl
         curl_global_init(CURL_GLOBAL_DEFAULT);
 
-        // Load URLs on startup
-        load_urls();
+        // Don't load URLs on startup - user will paste them
     }
 
     ~UrlEditorWindow() {
@@ -614,52 +620,14 @@ private:
         download_favicons();
     }
 
-    std::string convert_file_uri_to_path(const Glib::ustring& uri_or_path) {
-        std::string path = uri_or_path.raw();
-
-        // Check if it starts with file://
-        if (path.find("file://") == 0) {
-            // Remove file:// prefix
-            path = path.substr(7);
-
-            // Handle localhost (file://localhost/path -> /path)
-            if (path.find("localhost/") == 0) {
-                path = path.substr(9);
-            }
-
-            // Ensure absolute path starts with /
-            if (path.empty() || path[0] != '/') {
-                path = "/" + path;
-            }
-
-            // Decode URL encoding if present (e.g., %20 -> space)
-            // Simple approach: use Glib to decode
-            try {
-                gchar* decoded = g_uri_unescape_string(path.c_str(), nullptr);
-                if (decoded) {
-                    path = decoded;
-                    g_free(decoded);
-                }
-            } catch (...) {
-                // If decoding fails, use original path
-            }
-        }
-
-        return path;
-    }
 
     void load_urls() {
-        Glib::ustring file_path = file_path_entry->get_text();
-        if (file_path.empty()) {
-            status_label->set_text("Error: Please enter a file path");
-            return;
-        }
+        // Get text from text view
+        Glib::RefPtr<Gtk::TextBuffer> buffer = url_text_view->get_buffer();
+        Glib::ustring text = buffer->get_text();
 
-        std::string path_str = convert_file_uri_to_path(file_path);
-        // Open file in binary mode to read UTF-8 correctly
-        std::ifstream file(path_str, std::ios::binary);
-        if (!file.is_open()) {
-            status_label->set_text(Glib::ustring::compose("Error: Could not open %1", file_path));
+        if (text.empty()) {
+            status_label->set_text("Error: Please paste URLs into the text field");
             return;
         }
 
@@ -670,11 +638,13 @@ private:
         }
         url_entries.clear();
 
+        // Split text into lines
+        std::istringstream stream(text.raw());
         std::string line;
         Glib::ustring current_title;
         bool expecting_url = false;
 
-        while (std::getline(file, line)) {
+        while (std::getline(stream, line)) {
             // Trim whitespace
             line.erase(0, line.find_first_not_of(" \t\n\r"));
             line.erase(line.find_last_not_of(" \t\n\r") + 1);
@@ -711,7 +681,6 @@ private:
             }
         }
 
-        file.close();
         status_label->set_text(Glib::ustring::compose("Loaded %1 URLs", url_entries.size()));
         list_box->show_all();
 
@@ -724,20 +693,6 @@ private:
     }
 
     void save_urls() {
-        Glib::ustring file_path = file_path_entry->get_text();
-        if (file_path.empty()) {
-            status_label->set_text("Error: Please enter a file path");
-            return;
-        }
-
-        std::string path_str = convert_file_uri_to_path(file_path);
-        // Open file in binary mode to preserve UTF-8 encoding
-        std::ofstream file(path_str, std::ios::binary);
-        if (!file.is_open()) {
-            status_label->set_text(Glib::ustring::compose("Error: Could not save %1", file_path));
-            return;
-        }
-
         std::vector<Gtk::Widget*> children = list_box->get_children();
         std::vector<UrlEntry> ordered_entries;
 
@@ -751,19 +706,24 @@ private:
             }
         }
 
+        // Build the text content
+        std::ostringstream text_stream;
         for (size_t i = 0; i < ordered_entries.size(); ++i) {
             // Write UTF-8 strings directly (raw() returns UTF-8 bytes)
             std::string title_utf8 = ordered_entries[i].title.raw();
             std::string url_utf8 = ordered_entries[i].url.raw();
-            file << title_utf8 << "\n";
-            file << url_utf8 << "\n";
+            text_stream << title_utf8 << "\n";
+            text_stream << url_utf8;
             if (i < ordered_entries.size() - 1) {
-                file << "\n";
+                text_stream << "\n\n";
             }
         }
 
-        file.close();
-        status_label->set_text(Glib::ustring::compose("Saved %1 URLs", ordered_entries.size()));
+        // Set text in text view
+        Glib::RefPtr<Gtk::TextBuffer> buffer = url_text_view->get_buffer();
+        buffer->set_text(text_stream.str());
+
+        status_label->set_text(Glib::ustring::compose("Exported %1 URLs to text field", ordered_entries.size()));
     }
 
     void add_url_entry(const Glib::ustring& title, const Glib::ustring& url) {
@@ -979,7 +939,8 @@ private:
 
     Gtk::Box* main_box;
     Gtk::Box* header_box;
-    Gtk::Entry* file_path_entry;
+    Gtk::TextView* url_text_view;
+    Gtk::ScrolledWindow* url_text_scrolled;
     Gtk::Label* url_count_label;
     Gtk::ScrolledWindow* scrolled_window;
     Gtk::ListBox* list_box;
