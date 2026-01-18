@@ -3,6 +3,8 @@
 #include <gtkmm/listbox.h>
 #include <gtkmm/box.h>
 #include <gtkmm/button.h>
+#include <gtkmm/radiobutton.h>
+#include <gtkmm/radiobuttongroup.h>
 #include <gtkmm/label.h>
 #include <gtkmm/entry.h>
 #include <gtkmm/textview.h>
@@ -142,8 +144,23 @@ public:
 
         main_box->pack_start(*header_box, false, false);
 
+        // Create mode selection
+        Gtk::Box* mode_box = Gtk::manage(new Gtk::Box(Gtk::ORIENTATION_HORIZONTAL, 10));
+        Gtk::Label* mode_label = Gtk::manage(new Gtk::Label("Input format:"));
+        mode_label->set_halign(Gtk::ALIGN_START);
+        mode_box->pack_start(*mode_label, false, false);
+
+        mode1_radio = Gtk::manage(new Gtk::RadioButton("Title-URL pairs (with blank lines)"));
+        Gtk::RadioButtonGroup group = mode1_radio->get_group();
+        mode2_radio = Gtk::manage(new Gtk::RadioButton(group, "URLs only (one per line, optional # title)"));
+        mode2_radio->set_active(true); // Default to mode 2
+
+        mode_box->pack_start(*mode1_radio, false, false);
+        mode_box->pack_start(*mode2_radio, false, false);
+        main_box->pack_start(*mode_box, false, false);
+
         // Create text view for URLs input/output
-        Gtk::Label* text_label = Gtk::manage(new Gtk::Label("URLs (paste here, one title-URL pair per two lines):"));
+        Gtk::Label* text_label = Gtk::manage(new Gtk::Label("URLs (paste here):"));
         text_label->set_halign(Gtk::ALIGN_START);
         main_box->pack_start(*text_label, false, false);
 
@@ -666,46 +683,97 @@ private:
         }
         url_entries.clear();
 
-        // Split text into lines
-        std::istringstream stream(text.raw());
-        std::string line;
-        Glib::ustring current_title;
-        bool expecting_url = false;
+        bool mode2 = mode2_radio->get_active(); // Mode 2: URLs only with # title
 
-        while (std::getline(stream, line)) {
-            // Trim whitespace
-            line.erase(0, line.find_first_not_of(" \t\n\r"));
-            line.erase(line.find_last_not_of(" \t\n\r") + 1);
+        if (mode2) {
+            // Mode 2: URLs only, one per line, optional # title
+            std::istringstream stream(text.raw());
+            std::string line;
 
-            if (line.empty()) {
-                expecting_url = false;
-                continue;
-            }
+            while (std::getline(stream, line)) {
+                // Trim whitespace
+                line.erase(0, line.find_first_not_of(" \t\n\r"));
+                line.erase(line.find_last_not_of(" \t\n\r") + 1);
 
-            // Treat the line as UTF-8 (which is the standard for modern text files)
-            // Glib::ustring can handle UTF-8 strings directly
-            Glib::ustring ustring_line;
-            try {
-                // Try to create ustring from UTF-8 bytes
-                // If the string is already valid UTF-8, this will work
-                ustring_line = Glib::ustring(line);
-            } catch (...) {
-                // If that fails, try to convert from locale encoding
-                try {
-                    ustring_line = Glib::locale_to_utf8(line);
-                } catch (...) {
-                    // Last resort: use as-is (might have encoding issues)
-                    ustring_line = line;
+                if (line.empty()) {
+                    continue;
                 }
-            }
 
-            if (!expecting_url) {
-                current_title = ustring_line;
-                expecting_url = true;
-            } else {
-                url_entries.push_back(UrlEntry(current_title, ustring_line));
-                add_url_entry(current_title, ustring_line);
-                expecting_url = false;
+                // Parse line: URL # Title or just URL
+                std::string url_str = line;
+                std::string title_str;
+
+                // Check for # comment
+                size_t hash_pos = line.find(" # ");
+                if (hash_pos != std::string::npos) {
+                    url_str = line.substr(0, hash_pos);
+                    title_str = line.substr(hash_pos + 3); // Skip " # "
+                    // Trim both
+                    url_str.erase(0, url_str.find_first_not_of(" \t"));
+                    url_str.erase(url_str.find_last_not_of(" \t") + 1);
+                    title_str.erase(0, title_str.find_first_not_of(" \t"));
+                    title_str.erase(title_str.find_last_not_of(" \t") + 1);
+                } else {
+                    // No title provided, use URL as title for now
+                    // (Website title will be fetched with favicon)
+                    title_str = url_str;
+                }
+
+                // Convert to Glib::ustring
+                Glib::ustring url, title;
+                try {
+                    url = Glib::ustring(url_str);
+                    title = Glib::ustring(title_str);
+                } catch (...) {
+                    try {
+                        url = Glib::locale_to_utf8(url_str);
+                        title = Glib::locale_to_utf8(title_str);
+                    } catch (...) {
+                        url = url_str;
+                        title = title_str;
+                    }
+                }
+
+                url_entries.push_back(UrlEntry(title, url));
+                add_url_entry(title, url);
+            }
+        } else {
+            // Mode 1: Title-URL pairs with blank lines
+            std::istringstream stream(text.raw());
+            std::string line;
+            Glib::ustring current_title;
+            bool expecting_url = false;
+
+            while (std::getline(stream, line)) {
+                // Trim whitespace
+                line.erase(0, line.find_first_not_of(" \t\n\r"));
+                line.erase(line.find_last_not_of(" \t\n\r") + 1);
+
+                if (line.empty()) {
+                    expecting_url = false;
+                    continue;
+                }
+
+                // Treat the line as UTF-8
+                Glib::ustring ustring_line;
+                try {
+                    ustring_line = Glib::ustring(line);
+                } catch (...) {
+                    try {
+                        ustring_line = Glib::locale_to_utf8(line);
+                    } catch (...) {
+                        ustring_line = line;
+                    }
+                }
+
+                if (!expecting_url) {
+                    current_title = ustring_line;
+                    expecting_url = true;
+                } else {
+                    url_entries.push_back(UrlEntry(current_title, ustring_line));
+                    add_url_entry(current_title, ustring_line);
+                    expecting_url = false;
+                }
             }
         }
 
@@ -734,16 +802,20 @@ private:
             }
         }
 
-        // Build the text content
+        // Build the text content - always export in mode 2 format (URL # Title)
         std::ostringstream text_stream;
         for (size_t i = 0; i < ordered_entries.size(); ++i) {
             // Write UTF-8 strings directly (raw() returns UTF-8 bytes)
             std::string title_utf8 = ordered_entries[i].title.raw();
             std::string url_utf8 = ordered_entries[i].url.raw();
-            text_stream << title_utf8 << "\n";
+
+            // Format: URL # Title
             text_stream << url_utf8;
+            if (!title_utf8.empty() && title_utf8 != url_utf8) {
+                text_stream << " # " << title_utf8;
+            }
             if (i < ordered_entries.size() - 1) {
-                text_stream << "\n\n";
+                text_stream << "\n";
             }
         }
 
@@ -967,6 +1039,8 @@ private:
 
     Gtk::Box* main_box;
     Gtk::Box* header_box;
+    Gtk::RadioButton* mode1_radio;
+    Gtk::RadioButton* mode2_radio;
     Gtk::TextView* url_text_view;
     Gtk::ScrolledWindow* url_text_scrolled;
     Gtk::Label* url_count_label;
