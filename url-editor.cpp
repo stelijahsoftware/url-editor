@@ -30,8 +30,6 @@
 #include <gdk/gdk.h>
 #include <glib.h>
 #include <curl/curl.h>
-#include <fstream>
-#include <sstream>
 #include <vector>
 #include <memory>
 #include <thread>
