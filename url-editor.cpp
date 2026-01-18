@@ -16,6 +16,8 @@
 #include <gtkmm/separator.h>
 #include <gtkmm/linkbutton.h>
 #include <gtkmm/clipboard.h>
+#include <gtkmm/cssprovider.h>
+#include <gtkmm/stylecontext.h>
 #include <glibmm/ustring.h>
 #include <glibmm/fileutils.h>
 #include <glibmm/convert.h>
@@ -234,6 +236,25 @@ public:
         main_box->pack_start(*status_box, false, false);
 
         show_all();
+
+        // Apply custom CSS for thicker scrollbars and darker background
+        Glib::RefPtr<Gtk::CssProvider> css_provider = Gtk::CssProvider::create();
+        css_provider->load_from_data(
+            "window {"
+            "  background-color: #e0e0e0;"
+            "}"
+            "scrolledwindow scrollbar {"
+            "  min-width: 20px;"
+            "  min-height: 20px;"
+            "}"
+            "scrolledwindow scrollbar slider {"
+            "  min-width: 20px;"
+            "  min-height: 20px;"
+            "}"
+        );
+        Glib::RefPtr<Gdk::Screen> screen = Gdk::Screen::get_default();
+        Gtk::StyleContext::add_provider_for_screen(
+            screen, css_provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
         // Initialize curl
         curl_global_init(CURL_GLOBAL_DEFAULT);
